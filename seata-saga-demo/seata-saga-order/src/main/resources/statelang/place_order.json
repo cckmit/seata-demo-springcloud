@@ -1,0 +1,175 @@
+{
+  "Name": "PlaceOrder",
+  "Comment": "place order in a transaction",
+  "StartState": "OrderService",
+  "Version": "0.0.1",
+  "States": {
+    "OrderService": {
+      "Type": "ServiceTask",
+      "ServiceName": "orderService",
+      "ServiceMethod": "placeOrder",
+      "CompensateState": "CompensateOrder",
+      "Next": "ChoiceState1",
+      "Input": [
+        "$.[businessKey]",
+        "$.[userId]",
+        "$.[productId]",
+        "$.[number]"
+      ],
+      "Output": {
+        "orderResult": "$.#root"
+      },
+      "Status": {
+        "#root == true": "SU",
+        "#root == false": "FA",
+        "$Exception{java.lang.Throwable}": "UN"
+      },
+      "Catch": [
+        {
+          "Exceptions": [
+            "java.lang.Throwable"
+          ],
+          "Next": "CompensationTrigger"
+        }
+      ]
+    },
+    "ChoiceState1": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Expression": "[orderResult] == true",
+          "Next": "StorageService"
+        },
+        {
+          "Expression": "[orderResult] == false",
+          "Next": "CompensationTrigger"
+        }
+      ],
+      "Default": "Fail"
+    },
+    "StorageService": {
+      "Type": "ServiceTask",
+      "ServiceName": "cn.kunter.seata.saga.storage.api.StorageFeign",
+      "ServiceMethod": "reduceStock",
+      "CompensateState": "CompensateStorage",
+      "Next": "ChoiceState2",
+      "Input": [
+        "$.[businessKey]",
+        "$.[productId]",
+        "$.[number]"
+      ],
+      "Output": {
+        "storageResult": "$.#root"
+      },
+      "Status": {
+        "#root == true": "SU",
+        "#root == false": "FA",
+        "$Exception{java.lang.Throwable}": "UN"
+      },
+      "Catch": [
+        {
+          "Exceptions": [
+            "java.lang.Throwable"
+          ],
+          "Next": "CompensationTrigger"
+        }
+      ]
+    },
+    "ChoiceState2": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Expression": "[storageResult] == true",
+          "Next": "AccountService"
+        },
+        {
+          "Expression": "[storageResult] == false",
+          "Next": "CompensationTrigger"
+        }
+      ],
+      "Default": "Fail"
+    },
+    "AccountService": {
+      "Type": "ServiceTask",
+      "ServiceName": "cn.kunter.seata.saga.account.api.AccountFeign",
+      "ServiceMethod": "reduceBalance",
+      "CompensateState": "CompensateAccount",
+      "Next": "ChoiceState3",
+      "Input": [
+        "$.[businessKey]",
+        "$.[userId]",
+        "$.[amount]"
+      ],
+      "Output": {
+        "accountResult": "$.#root"
+      },
+      "Status": {
+        "#root == true": "SU",
+        "#root == false": "FA",
+        "$Exception{java.lang.Throwable}": "UN"
+      },
+      "Catch": [
+        {
+          "Exceptions": [
+            "java.lang.Throwable"
+          ],
+          "Next": "CompensationTrigger"
+        }
+      ]
+    },
+    "ChoiceState3": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Expression": "[accountResult] == true",
+          "Next": "Succeed"
+        },
+        {
+          "Expression": "[accountResult] == false",
+          "Next": "CompensationTrigger"
+        }
+      ],
+      "Default": "Fail"
+    },
+    "CompensateOrder": {
+      "Type": "ServiceTask",
+      "ServiceName": "orderService",
+      "ServiceMethod": "revokeOrder",
+      "Input": [
+        "$.[businessKey]"
+      ]
+    },
+    "CompensateStorage": {
+      "Type": "ServiceTask",
+      "ServiceName": "cn.kunter.seata.saga.storage.api.StorageFeign",
+      "ServiceMethod": "compensateStock",
+      "Input": [
+        "$.[businessKey]",
+        "$.[productId]",
+        "$.[number]"
+      ]
+    },
+    "CompensateAccount": {
+      "Type": "ServiceTask",
+      "ServiceName": "cn.kunter.seata.saga.account.api.AccountFeign",
+      "ServiceMethod": "compensateBalance",
+      "Input": [
+        "$.[businessKey]",
+        "$.[userId]",
+        "$.[amount]"
+      ]
+    },
+    "CompensationTrigger": {
+      "Type": "CompensationTrigger",
+      "Next": "Fail"
+    },
+    "Succeed": {
+      "Type": "Succeed"
+    },
+    "Fail": {
+      "Type": "Fail",
+      "ErrorCode": "PURCHASE_FAILED",
+      "Message": "purchase failed"
+    }
+  }
+}
